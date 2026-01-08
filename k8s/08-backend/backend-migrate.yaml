@@ -1,0 +1,64 @@
+# Database Migration Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backend-migrate
+  namespace: ankiya-cloud
+  labels:
+    app: backend-migrate
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until pg_isready -h postgresql-service -p 5432 -U $POSTGRES_USER; do
+                echo "Waiting for PostgreSQL..."
+                sleep 5
+              done
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_PASSWORD
+      containers:
+        - name: migrate
+          image: ankiya/backend:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Running database migrations..."
+              npx prisma migrate deploy
+              echo "Migrations complete!"
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgresql-service:5432/$(POSTGRES_DB)"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_DB

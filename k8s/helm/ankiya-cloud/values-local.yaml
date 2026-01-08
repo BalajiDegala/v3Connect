@@ -1,0 +1,75 @@
+# Local Development Values
+# For local testing without building custom images
+# Usage: helm install ankiya . -f values-local.yaml -n ankiya-cloud
+
+global:
+  namespace: ankiya-cloud
+  domain: localhost
+  storageClass: "local-path"
+
+# Disable frontend/backend (no images built yet)
+frontend:
+  enabled: false
+
+backend:
+  enabled: false
+
+# PostgreSQL - use official image
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    tag: "16"  # Use simple tag that exists
+  auth:
+    username: ankiya_admin
+    password: ankiya_dev_password
+    database: ankiya_cloud
+  primary:
+    persistence:
+      enabled: true
+      size: 5Gi
+  metrics:
+    enabled: false
+
+# Redis - use official image  
+redis:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: bitnami/redis
+    tag: "7.4"  # Use simple tag
+  auth:
+    enabled: true
+    password: redis_dev_password
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+  replica:
+    replicaCount: 1
+    persistence:
+      enabled: true
+      size: 1Gi
+  metrics:
+    enabled: false
+
+# Disable Keycloak (use external or skip for dev)
+keycloak:
+  enabled: false
+
+# Disable MinIO (use local storage for dev)
+minio:
+  enabled: false
+
+# Disable ingress for local dev
+ingress:
+  enabled: false
+
+# Disable monitoring for local dev
+monitoring:
+  enabled: false
+
+# Disable network policies for local dev
+networkPolicies:
+  enabled: false

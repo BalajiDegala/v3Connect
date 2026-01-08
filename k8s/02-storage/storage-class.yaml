@@ -1,0 +1,22 @@
+# Storage Classes for different tiers
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ankiya-fast
+  labels:
+    app.kubernetes.io/part-of: ankiya-platform
+provisioner: rancher.io/local-path  # Change based on your cluster
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ankiya-standard
+  labels:
+    app.kubernetes.io/part-of: ankiya-platform
+provisioner: rancher.io/local-path  # Change based on your cluster
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

@@ -1,0 +1,333 @@
+# Ankiya Cloud Backend Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: ankiya-cloud
+  labels:
+    app: backend
+    app.kubernetes.io/name: ankiya-backend
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: backend
+        app.kubernetes.io/name: ankiya-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: ankiya-service-account
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        # Wait for dependencies
+        - name: wait-for-deps
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until nc -z postgresql-service 5432; do sleep 2; done
+              echo "PostgreSQL is ready!"
+              
+              echo "Waiting for Redis..."
+              until nc -z redis-service 6379; do sleep 2; done
+              echo "Redis is ready!"
+              
+              echo "Waiting for Keycloak..."
+              until nc -z keycloak-service 8080; do sleep 2; done
+              echo "Keycloak is ready!"
+              
+              echo "All dependencies are ready!"
+      containers:
+        - name: backend
+          image: ankiya/backend:latest  # Update with your registry
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            # Node environment
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: NODE_ENV
+            - name: PORT
+              value: "5000"
+            
+            # Database
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgresql-service:5432/$(POSTGRES_DB)"
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: POSTGRES_DB
+            
+            # Redis
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: REDIS_PORT
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: REDIS_PASSWORD
+            
+            # Keycloak
+            - name: KEYCLOAK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: KEYCLOAK_URL
+            - name: KEYCLOAK_REALM
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: KEYCLOAK_REALM
+            - name: KEYCLOAK_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: KEYCLOAK_CLIENT_ID
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: KEYCLOAK_CLIENT_SECRET
+            
+            # Razorpay
+            - name: RAZORPAY_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: RAZORPAY_KEY_ID
+            - name: RAZORPAY_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: RAZORPAY_KEY_SECRET
+            - name: RAZORPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: RAZORPAY_WEBHOOK_SECRET
+            
+            # SMTP
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: SMTP_HOST
+            - name: SMTP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: SMTP_PORT
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: SMTP_USER
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: SMTP_PASS
+            - name: EMAIL_FROM
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: EMAIL_FROM
+            
+            # MinIO
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: MINIO_ENDPOINT
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: MINIO_ROOT_USER
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: MINIO_ROOT_PASSWORD
+            
+            # JWT & Session
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: JWT_SECRET
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ankiya-secrets
+                  key: SESSION_SECRET
+            
+            # URLs
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ankiya-config
+                  key: FRONTEND_URL
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: backend
+                topologyKey: kubernetes.io/hostname
+---
+# Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: ankiya-cloud
+  labels:
+    app: backend
+    app.kubernetes.io/name: ankiya-backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+      name: http
+  selector:
+    app: backend
+---
+# Backend LoadBalancer Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-lb
+  namespace: ankiya-cloud
+  labels:
+    app: backend
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: ""
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 5000
+      targetPort: 5000
+      name: http
+  selector:
+    app: backend
+---
+# Backend HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: ankiya-cloud
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+---
+# Backend PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: ankiya-cloud
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: backend

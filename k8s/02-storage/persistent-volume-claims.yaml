@@ -1,0 +1,118 @@
+# PostgreSQL PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-pvc
+  namespace: ankiya-cloud
+  labels:
+    app: postgresql
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ankiya-fast
+  resources:
+    requests:
+      storage: 50Gi
+---
+# Redis PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: ankiya-cloud
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ankiya-fast
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Keycloak PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-pvc
+  namespace: ankiya-cloud
+  labels:
+    app: keycloak
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ankiya-standard
+  resources:
+    requests:
+      storage: 5Gi
+---
+# MinIO PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: ankiya-cloud
+  labels:
+    app: minio
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ankiya-standard
+  resources:
+    requests:
+      storage: 100Gi
+---
+# Prometheus PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: ankiya-cloud
+  labels:
+    app: prometheus
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ankiya-standard
+  resources:
+    requests:
+      storage: 50Gi
+---
+# Grafana PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: ankiya-cloud
+  labels:
+    app: grafana
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ankiya-standard
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Loki PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-pvc
+  namespace: ankiya-cloud
+  labels:
+    app: loki
+    app.kubernetes.io/part-of: ankiya-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ankiya-standard
+  resources:
+    requests:
+      storage: 50Gi

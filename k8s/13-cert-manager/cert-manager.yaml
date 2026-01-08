@@ -1,0 +1,80 @@
+# Cert-Manager Installation and Configuration
+# Provides automatic SSL certificate management with Let's Encrypt
+
+---
+# Install cert-manager first:
+# kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.yaml
+# Wait for cert-manager to be ready:
+# kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=120s
+
+---
+# ClusterIssuer for Let's Encrypt Staging (for testing)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    # Staging server for testing
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: admin@ankiyacloud.com  # UPDATE THIS
+    privateKeySecretRef:
+      name: letsencrypt-staging-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+
+---
+# ClusterIssuer for Let's Encrypt Production
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # Production server
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@ankiyacloud.com  # UPDATE THIS
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+
+---
+# Certificate for Ankiya Cloud domains
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ankiya-tls
+  namespace: ankiya-cloud
+spec:
+  secretName: ankiya-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: ankiya.example.com  # UPDATE THIS
+  dnsNames:
+    - ankiya.example.com           # Frontend - UPDATE
+    - api.ankiya.example.com       # Backend API - UPDATE
+    - auth.ankiya.example.com      # Keycloak - UPDATE
+    - grafana.ankiya.example.com   # Grafana - UPDATE
+    - storage.ankiya.example.com   # MinIO - UPDATE
+
+---
+# Certificate for monitoring (separate if needed)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: monitoring-tls
+  namespace: ankiya-cloud
+spec:
+  secretName: monitoring-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - prometheus.ankiya.example.com  # UPDATE
+    - grafana.ankiya.example.com     # UPDATE

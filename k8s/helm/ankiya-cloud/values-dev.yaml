@@ -1,0 +1,109 @@
+# Development environment overrides
+# Usage: helm install ankiya ./ankiya-cloud -f values.yaml -f values-dev.yaml
+
+global:
+  domain: dev.ankiya.local
+  storageClass: "local-path"
+
+frontend:
+  replicaCount: 1
+  
+  resources:
+    limits:
+      cpu: 250m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  
+  autoscaling:
+    enabled: false
+
+backend:
+  replicaCount: 1
+  
+  env:
+    NODE_ENV: development
+    LOG_LEVEL: debug
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  
+  autoscaling:
+    enabled: false
+
+postgresql:
+  primary:
+    persistence:
+      size: 5Gi
+    
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+redis:
+  master:
+    persistence:
+      size: 1Gi
+    
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  
+  replica:
+    replicaCount: 0
+
+keycloak:
+  replicaCount: 1
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+minio:
+  persistence:
+    size: 10Gi
+
+monitoring:
+  prometheus:
+    retention: 7d
+    persistence:
+      size: 10Gi
+    
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  
+  grafana:
+    persistence:
+      size: 1Gi
+  
+  loki:
+    retention: 7d
+    persistence:
+      size: 10Gi
+
+networkPolicies:
+  enabled: false
+
+ingress:
+  tls:
+    enabled: false
+  
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging

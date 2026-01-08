@@ -1,0 +1,329 @@
+# Ankiya Cloud Helm Chart - Default Values
+# Override these in your environment-specific values files
+
+# Global settings
+global:
+  namespace: ankiya-cloud
+  domain: ankiya.example.com  # UPDATE THIS
+  
+  # Image settings
+  imageRegistry: ""
+  imagePullSecrets: []
+  
+  # Storage class
+  storageClass: "local-path"
+
+# =====================================================
+# FRONTEND
+# =====================================================
+frontend:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: ankiya/frontend
+    tag: "latest"
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =====================================================
+# BACKEND API
+# =====================================================
+backend:
+  enabled: true
+  replicaCount: 3
+  
+  image:
+    repository: ankiya/backend
+    tag: "latest"
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 5000
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  
+  env:
+    NODE_ENV: production
+  
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =====================================================
+# POSTGRESQL
+# =====================================================
+postgresql:
+  enabled: true  # Set to false if using external database
+  
+  # Using Bitnami PostgreSQL chart
+  auth:
+    username: ankiya_admin
+    database: ankiya_cloud
+    existingSecret: ankiya-secrets
+    secretKeys:
+      adminPasswordKey: POSTGRES_PASSWORD
+      userPasswordKey: POSTGRES_PASSWORD
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: ""
+    
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false  # Requires Prometheus Operator CRDs
+
+# External PostgreSQL (when postgresql.enabled = false)
+externalDatabase:
+  host: ""
+  port: 5432
+  database: ankiya_cloud
+  username: ankiya_admin
+  existingSecret: ""
+  existingSecretPasswordKey: ""
+
+# =====================================================
+# REDIS
+# =====================================================
+redis:
+  enabled: true
+  
+  # Using Bitnami Redis chart
+  auth:
+    enabled: true
+    existingSecret: ankiya-secrets
+    existingSecretPasswordKey: REDIS_PASSWORD
+  
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+    
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 5Gi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false  # Requires Prometheus Operator CRDs
+
+# =====================================================
+# KEYCLOAK
+# =====================================================
+keycloak:
+  enabled: true
+  
+  # Using Bitnami Keycloak chart
+  auth:
+    adminUser: admin
+    existingSecret: ankiya-secrets
+    passwordSecretKey: KEYCLOAK_ADMIN_PASSWORD
+  
+  production: true
+  proxy: edge
+  
+  replicaCount: 2
+  
+  postgresql:
+    enabled: false  # Use our PostgreSQL
+  
+  externalDatabase:
+    host: postgresql-service
+    port: 5432
+    database: keycloak
+    user: ankiya_admin
+    existingSecret: ankiya-secrets
+    existingSecretPasswordKey: POSTGRES_PASSWORD
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+# =====================================================
+# MINIO (for logs)
+# =====================================================
+minio:
+  enabled: true
+  
+  # Using Bitnami MinIO chart
+  auth:
+    existingSecret: ankiya-secrets
+    rootUserSecretKey: MINIO_ROOT_USER
+    rootPasswordSecretKey: MINIO_ROOT_PASSWORD
+  
+  mode: standalone
+  
+  persistence:
+    enabled: true
+    size: 50Gi
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Create buckets on startup
+  defaultBuckets: "logs,backups"
+
+# =====================================================
+# INGRESS
+# =====================================================
+ingress:
+  enabled: true
+  className: nginx
+  
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+  
+  hosts:
+    frontend: ankiya.example.com
+    backend: api.ankiya.example.com
+    keycloak: auth.ankiya.example.com
+    grafana: grafana.ankiya.example.com
+    minio: storage.ankiya.example.com
+  
+  tls:
+    enabled: true
+    secretName: ankiya-tls
+
+# =====================================================
+# MONITORING
+# =====================================================
+monitoring:
+  enabled: true
+  
+  prometheus:
+    enabled: true
+    retention: 15d
+    persistence:
+      enabled: true
+      size: 50Gi
+    
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+  
+  grafana:
+    enabled: true
+    adminPassword: ""  # Leave empty to use secret
+    persistence:
+      enabled: true
+      size: 5Gi
+    
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  
+  loki:
+    enabled: true
+    retention: 30d
+    persistence:
+      enabled: true
+      size: 50Gi
+
+# =====================================================
+# NETWORK POLICIES
+# =====================================================
+networkPolicies:
+  enabled: true
+
+# =====================================================
+# SECRETS
+# =====================================================
+secrets:
+  # Razorpay
+  razorpayKeyId: ""
+  razorpayKeySecret: ""
+  razorpayWebhookSecret: ""
+  
+  # SMTP
+  smtpHost: smtp.gmail.com
+  smtpUser: ""
+  smtpPass: ""
+  
+  # JWT
+  jwtSecret: ""  # Leave empty to auto-generate
+  sessionSecret: ""  # Leave empty to auto-generate
+  
+  # Use existing secret instead of creating new one
+  existingSecret: ""
+
+# =====================================================
+# METALLB
+# =====================================================
+metallb:
+  enabled: false
+  ipRange: "192.168.1.240-192.168.1.250"

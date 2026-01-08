@@ -1,0 +1,541 @@
+// Multi-tenant Ankiya Cloud Platform Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organization/Studio Model (Tenant)
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  keycloakOrgId   String   @unique // Keycloak organization ID
+  domain          String?  @unique
+  status          OrgStatus @default(ACTIVE)
+  subscription    SubscriptionTier @default(FREE)
+  
+  // Contact Info
+  contactEmail    String
+  contactPhone    String?
+  address         String?
+  
+  // Billing
+  billingEmail    String?
+  gstNumber       String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  users           User[]
+  machines        Machine[]
+  invoices        Invoice[]
+  tickets         Ticket[]
+  machineOrders   MachineOrder[]
+  invitations     Invitation[]
+  shows           Show[]
+  
+  @@index([keycloakOrgId])
+  @@index([status])
+}
+
+enum OrgStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// User Model (tied to Keycloak)
+model User {
+  id              String   @id @default(cuid())
+  keycloakId      String   @unique // Keycloak user ID
+  email           String
+  firstName       String?
+  lastName        String?
+  phone           String?
+  avatar          String?
+  role            UserRole @default(USER)
+  status          UserStatus @default(ACTIVE)
+  
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Machine assignments
+  assignedMachines MachineAssignment[]
+  
+  // Show assignments
+  showAssignments  ShowAssignment[]
+  
+  // Invitations sent by this user
+  sentInvitations  Invitation[] @relation("InvitedBy")
+  
+  // Notifications
+  notifications   Notification[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastLoginAt     DateTime?
+  
+  @@index([keycloakId])
+  @@index([organizationId])
+  @@index([email])
+}
+
+enum UserRole {
+  SUPER_ADMIN    // Ankiya Cloud admin
+  STUDIO_ADMIN   // Studio admin/owner
+  STUDIO_MANAGER // Studio manager
+  STUDIO_USER    // Studio user
+  USER           // Generic user
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+// Invitation Model
+model Invitation {
+  id              String   @id @default(cuid())
+  email           String
+  token           String   @unique
+  role            String   @default("STUDIO_USER")
+  status          InvitationStatus @default(PENDING)
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  invitedById     String?
+  invitedBy       User?    @relation("InvitedBy", fields: [invitedById], references: [id])
+  
+  acceptedByUserId String?
+  acceptedAt      DateTime?
+  
+  metadata        String?  // JSON string for extra data like firstName, lastName
+  
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([token])
+  @@index([email])
+  @@index([organizationId])
+  @@index([status])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+// Machine Configuration Model
+model MachineConfig {
+  id          String @id @default(cuid())
+  name        String
+  cpu         String
+  ram         String
+  storage     String
+  gpu         String?
+  pricePerMonth Decimal @db.Decimal(10, 2)
+  
+  isActive    Boolean @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  machineOrders MachineOrder[]
+  machines      Machine[]
+  
+  @@index([isActive])
+}
+
+// Machine Order (Purchase Request)
+model MachineOrder {
+  id              String @id @default(cuid())
+  orderNumber     String @unique
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  machineConfigId String
+  machineConfig   MachineConfig @relation(fields: [machineConfigId], references: [id])
+  
+  quantity        Int
+  duration        Int // months
+  totalAmount     Decimal @db.Decimal(10, 2)
+  
+  status          OrderStatus @default(PENDING_PAYMENT)
+  
+  // Razorpay
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  
+  // Ticket creation after payment
+  ticketId        String? @unique
+  ticket          Ticket? @relation(fields: [ticketId], references: [id])
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  paidAt          DateTime?
+  
+  machines        Machine[]
+  
+  @@index([organizationId])
+  @@index([status])
+  @@index([razorpayOrderId])
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+// Admin Ticket System
+model Ticket {
+  id              String @id @default(cuid())
+  ticketNumber    String @unique
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  title           String
+  description     String
+  priority        Priority @default(MEDIUM)
+  status          TicketStatus @default(OPEN)
+  
+  // Machine Configuration Request
+  machineConfigId String?
+  quantity        Int?
+  specialRequirements String?
+  
+  // Assignment
+  assignedToAdminId String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  resolvedAt      DateTime?
+  
+  machineOrder    MachineOrder?
+  machines        Machine[]
+  
+  @@index([organizationId])
+  @@index([status])
+  @@index([ticketNumber])
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_INFO
+  RESOLVED
+  CLOSED
+}
+
+// Machine Model (Actual provisioned machines)
+model Machine {
+  id              String @id @default(cuid())
+  name            String // RENDER-01, PAINT-01, etc.
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  machineConfigId String
+  machineConfig   MachineConfig @relation(fields: [machineConfigId], references: [id])
+  
+  orderId         String?
+  order           MachineOrder? @relation(fields: [orderId], references: [id])
+  
+  ticketId        String?
+  ticket          Ticket? @relation(fields: [ticketId], references: [id])
+  
+  // DCV Connection Details
+  dcvHost         String?
+  dcvPort         Int?
+  dcvUsername     String?
+  dcvPassword     String? // Should be encrypted
+  dcvLink         String? // Full DCV connection link
+  
+  // Backup Login Credentials (provided by admin)
+  loginUsername   String?
+  loginPassword   String?
+  
+  // Machine Status
+  status          MachineStatus @default(PROVISIONING)
+  
+  // Lifecycle
+  startDate       DateTime
+  expiryDate      DateTime
+  
+  // Current Assignment
+  assignments     MachineAssignment[]
+  
+  // Show Assignments
+  showAssignments MachineShowAssignment[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  provisionedAt   DateTime?
+  
+  @@index([organizationId])
+  @@index([status])
+  @@index([orderId])
+}
+
+enum MachineStatus {
+  PROVISIONING
+  ACTIVE
+  RUNNING
+  STOPPED
+  EXPIRED
+  MAINTENANCE
+  TERMINATED
+}
+
+// Machine Assignment to Users
+model MachineAssignment {
+  id          String @id @default(cuid())
+  
+  machineId   String
+  machine     Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  task        String?
+  
+  assignedAt  DateTime @default(now())
+  unassignedAt DateTime?
+  
+  // Email sent flag
+  emailSent   Boolean @default(false)
+  emailSentAt DateTime?
+  
+  @@index([machineId])
+  @@index([userId])
+  @@index([assignedAt])
+}
+
+// Invoice Model
+model Invoice {
+  id              String @id @default(cuid())
+  invoiceNumber   String @unique
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  amount          Decimal @db.Decimal(10, 2)
+  taxAmount       Decimal @db.Decimal(10, 2) @default(0)
+  totalAmount     Decimal @db.Decimal(10, 2)
+  
+  status          InvoiceStatus @default(PENDING)
+  
+  dueDate         DateTime
+  paidAt          DateTime?
+  
+  items           InvoiceItem[]
+  
+  // Razorpay
+  razorpayPaymentId String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([organizationId])
+  @@index([status])
+  @@index([invoiceNumber])
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model InvoiceItem {
+  id          String @id @default(cuid())
+  
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  description String
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(10, 2)
+  amount      Decimal @db.Decimal(10, 2)
+  
+  @@index([invoiceId])
+}
+
+// Audit Log
+model AuditLog {
+  id          String @id @default(cuid())
+  
+  action      String
+  entityType  String
+  entityId    String
+  userId      String?
+  organizationId String?
+  
+  changes     Json?
+  metadata    Json?
+  
+  ipAddress   String?
+  userAgent   String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([createdAt])
+}
+
+// Notifications
+model Notification {
+  id              String @id @default(cuid())
+  
+  userId          String
+  user            User @relation(fields: [userId], references: [id])
+  
+  title           String
+  message         String
+  type            NotificationType @default(INFO)
+  
+  // Link to related entity
+  entityType      String?
+  entityId        String?
+  
+  isRead          Boolean @default(false)
+  readAt          DateTime?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  MACHINE_REQUEST
+  TICKET_UPDATE
+  ORDER_UPDATE
+  PAYMENT_UPDATE
+}
+
+// Show/Project Model
+model Show {
+  id              String   @id @default(cuid())
+  name            String
+  code            String   // Short code like "PROJ1", "SHOW2024"
+  description     String?
+  status          ShowStatus @default(ACTIVE)
+  
+  // Dates
+  startDate       DateTime?
+  endDate         DateTime?
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  assignments     ShowAssignment[]
+  machineAssignments MachineShowAssignment[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([status])
+}
+
+enum ShowStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+// Show Role for Users
+enum ShowRole {
+  ARTIST
+  LEAD
+  SUPERVISOR
+  COORDINATOR
+  PRODUCER
+  SHOW_ADMIN
+}
+
+// Show Assignment - User to Show with Role
+model ShowAssignment {
+  id          String   @id @default(cuid())
+  
+  showId      String
+  show        Show     @relation(fields: [showId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  role        ShowRole @default(ARTIST)
+  department  String?  // Animation, Lighting, Compositing, etc.
+  
+  assignedAt  DateTime @default(now())
+  unassignedAt DateTime?
+  
+  // Keycloak sync status
+  keycloakSynced Boolean @default(false)
+  keycloakSyncedAt DateTime?
+  
+  @@unique([showId, userId])
+  @@index([showId])
+  @@index([userId])
+  @@index([role])
+}
+
+// Machine to Show Assignment
+model MachineShowAssignment {
+  id          String   @id @default(cuid())
+  
+  machineId   String
+  machine     Machine  @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  
+  showId      String
+  show        Show     @relation(fields: [showId], references: [id], onDelete: Cascade)
+  
+  assignedAt  DateTime @default(now())
+  
+  @@unique([machineId, showId])
+  @@index([machineId])
+  @@index([showId])
+}
+

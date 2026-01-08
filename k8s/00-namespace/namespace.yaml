@@ -1,0 +1,80 @@
+# Ankiya Cloud Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ankiya-cloud
+  labels:
+    app.kubernetes.io/name: ankiya-cloud
+    app.kubernetes.io/part-of: ankiya-platform
+---
+# Resource Quota for the namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ankiya-quota
+  namespace: ankiya-cloud
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    persistentvolumeclaims: "20"
+    pods: "100"
+    services: "30"
+    secrets: "50"
+    configmaps: "50"
+---
+# Limit Range for default resource limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ankiya-limits
+  namespace: ankiya-cloud
+spec:
+  limits:
+    - default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      type: Container
+---
+# Service Account for Ankiya Cloud
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ankiya-service-account
+  namespace: ankiya-cloud
+  labels:
+    app.kubernetes.io/name: ankiya-cloud
+---
+# Role for Ankiya Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ankiya-role
+  namespace: ankiya-cloud
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+---
+# Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ankiya-role-binding
+  namespace: ankiya-cloud
+subjects:
+  - kind: ServiceAccount
+    name: ankiya-service-account
+    namespace: ankiya-cloud
+roleRef:
+  kind: Role
+  name: ankiya-role
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,316 @@
+# =====================================================
+# ANKIYA CLOUD - CONFIGMAPS
+# =====================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ankiya-config
+  namespace: ankiya-cloud
+  labels:
+    app.kubernetes.io/name: ankiya-cloud
+    app.kubernetes.io/part-of: ankiya-platform
+data:
+  # Environment
+  NODE_ENV: "production"
+  
+  # Database
+  POSTGRES_HOST: "postgresql-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "ankiya_cloud"
+  
+  # Redis
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  
+  # Keycloak
+  KEYCLOAK_URL: "http://keycloak-service:8080"
+  KEYCLOAK_REALM: "ankiya-cloud"
+  KEYCLOAK_CLIENT_ID: "ankiya-cloud-backend"
+  
+  # MinIO
+  MINIO_ENDPOINT: "minio-service:9000"
+  MINIO_BUCKET: "ankiya-logs"
+  MINIO_USE_SSL: "false"
+  
+  # SMTP
+  SMTP_PORT: "587"
+  SMTP_SECURE: "false"
+  EMAIL_FROM: "noreply@ankiyacloud.com"
+  
+  # NFS (if using external NFS)
+  NFS_MOUNT_PATH: "/mnt/ankiya-storage"
+  
+  # URLs - UPDATE THESE FOR YOUR DOMAIN
+  FRONTEND_URL: "https://ankiya.example.com"
+  BACKEND_URL: "https://api.ankiya.example.com"
+  KEYCLOAK_PUBLIC_URL: "https://auth.ankiya.example.com"
+
+---
+# PostgreSQL Config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-config
+  namespace: ankiya-cloud
+  labels:
+    app: postgresql
+data:
+  # PostgreSQL tuning for production
+  postgresql.conf: |
+    # Memory
+    shared_buffers = 256MB
+    effective_cache_size = 768MB
+    work_mem = 16MB
+    maintenance_work_mem = 128MB
+    
+    # Connections
+    max_connections = 200
+    
+    # Write Ahead Log
+    wal_buffers = 16MB
+    min_wal_size = 512MB
+    max_wal_size = 2GB
+    
+    # Query Planner
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    
+    # Logging
+    log_destination = 'stderr'
+    logging_collector = on
+    log_directory = '/var/log/postgresql'
+    log_filename = 'postgresql-%Y-%m-%d.log'
+    log_min_duration_statement = 1000
+    log_checkpoints = on
+    log_connections = on
+    log_disconnections = on
+    log_lock_waits = on
+    log_temp_files = 0
+    
+    # Autovacuum
+    autovacuum = on
+    autovacuum_max_workers = 3
+    
+  pg_hba.conf: |
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            md5
+    host    all             all             ::1/128                 md5
+    host    all             all             0.0.0.0/0               md5
+    host    replication     all             0.0.0.0/0               md5
+
+---
+# Redis Config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: ankiya-cloud
+  labels:
+    app: redis
+data:
+  redis.conf: |
+    # Network
+    bind 0.0.0.0
+    port 6379
+    protected-mode yes
+    
+    # Memory
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+    
+    # Persistence
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    
+    # Logging
+    loglevel notice
+    
+    # Slow log
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+    
+    # Security (password set via requirepass)
+    # requirepass is set via environment variable
+    
+    # Clients
+    maxclients 10000
+    timeout 300
+    tcp-keepalive 300
+
+---
+# Keycloak Realm Config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-config
+  namespace: ankiya-cloud
+  labels:
+    app: keycloak
+data:
+  ankiya-realm.json: |
+    {
+      "realm": "ankiya-cloud",
+      "enabled": true,
+      "sslRequired": "external",
+      "registrationAllowed": true,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "permanentLockout": false,
+      "maxFailureWaitSeconds": 900,
+      "minimumQuickLoginWaitSeconds": 60,
+      "waitIncrementSeconds": 60,
+      "quickLoginCheckMilliSeconds": 1000,
+      "maxDeltaTimeSeconds": 43200,
+      "failureFactor": 5,
+      "roles": {
+        "realm": [
+          { "name": "SUPER_ADMIN", "description": "Ankiya Cloud Administrator" },
+          { "name": "ORG_ADMIN", "description": "Organization Administrator" },
+          { "name": "MANAGER", "description": "Organization Manager" },
+          { "name": "USER", "description": "Standard User" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "ankiya-cloud-backend",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "bearerOnly": false,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "serviceAccountsEnabled": true,
+          "authorizationServicesEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"]
+        },
+        {
+          "clientId": "ankiya-cloud-frontend",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"]
+        }
+      ],
+      "clientScopes": [
+        {
+          "name": "organization",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true"
+          },
+          "protocolMappers": [
+            {
+              "name": "organizationId",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "config": {
+                "user.attribute": "organizationId",
+                "claim.name": "organizationId",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+---
+# Nginx Config for Frontend
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: ankiya-cloud
+  labels:
+    app: frontend
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+        
+        access_log /var/log/nginx/access.log main;
+        
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        
+        # Gzip
+        gzip on;
+        gzip_vary on;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_types text/plain text/css text/xml application/json application/javascript application/rss+xml application/atom+xml image/svg+xml;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        
+        server {
+            listen 80;
+            server_name _;
+            root /usr/share/nginx/html;
+            index index.html;
+            
+            # React Router support
+            location / {
+                try_files $uri $uri/ /index.html;
+            }
+            
+            # API proxy
+            location /api/ {
+                proxy_pass http://backend-service:5000/api/;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_cache_bypass $http_upgrade;
+            }
+            
+            # Static assets caching
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+            
+            # Health check
+            location /health {
+                access_log off;
+                return 200 "OK";
+                add_header Content-Type text/plain;
+            }
+        }
+    }

@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespace }}
+  labels:
+    {{- include "ankiya-cloud.labels" . | nindent 4 }}
+    name: {{ .Values.global.namespace }}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "ankiya-cloud.fullname" . }}-quota
+  namespace: {{ .Values.global.namespace }}
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: 40Gi
+    limits.cpu: "40"
+    limits.memory: 80Gi
+    persistentvolumeclaims: "20"
+    services: "20"
+    secrets: "30"
+    configmaps: "30"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "ankiya-cloud.fullname" . }}-limits
+  namespace: {{ .Values.global.namespace }}
+spec:
+  limits:
+    - default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      type: Container
