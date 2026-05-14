@@ -13,6 +13,11 @@ interface KeycloakRole {
   name: string;
 }
 
+interface KeycloakTokenResponse {
+  access_token: string;
+  expires_in: number;
+}
+
 class KeycloakAdminService {
   private adminToken: string | null = null;
   private tokenExpiry: number = 0;
@@ -45,7 +50,7 @@ class KeycloakAdminService {
         throw new Error(`Failed to get admin token: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as KeycloakTokenResponse;
       this.adminToken = data.access_token;
       // Token expires in expires_in seconds, subtract 60s buffer
       this.tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
@@ -74,7 +79,7 @@ class KeycloakAdminService {
         throw new Error(`Failed to get roles: ${response.status}`);
       }
 
-      return await response.json();
+      return (await response.json()) as KeycloakRole[];
     } catch (error) {
       console.error('Error getting realm roles:', error);
       throw error;
@@ -189,7 +194,7 @@ class KeycloakAdminService {
         throw new Error(`Failed to get user roles: ${response.status}`);
       }
 
-      return await response.json();
+      return (await response.json()) as KeycloakRole[];
     } catch (error) {
       console.error(`Error getting roles for user ${userId}:`, error);
       return [];

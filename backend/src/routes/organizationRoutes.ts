@@ -2,8 +2,17 @@ import { Router } from 'express';
 import { protect, extractUserInfo, checkRole } from '../middleware/keycloak.js';
 import { prisma } from '../config/database.js';
 import { keycloakAdminService } from '../services/keycloakAdminService.js';
+import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 const router = Router();
+
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabaseAdmin =
+  supabaseUrl && supabaseServiceRoleKey
+    ? createClient(supabaseUrl, supabaseServiceRoleKey)
+    : null;
 
 // Get current user's organization
 router.get('/me', protect, extractUserInfo, async (req, res) => {
@@ -36,14 +45,15 @@ router.post('/', protect, extractUserInfo, async (req, res) => {
       return res.status(400).json({ error: 'Name and contact email are required' });
     }
 
-    // Check if user already has an organization
+    // Check if user already has an organization.
+    // Treat as idempotent success to handle duplicate submits/retries gracefully.
     const existingUser = await prisma.user.findFirst({
       where: { keycloakId },
       include: { organization: true },
     });
 
     if (existingUser?.organizationId) {
-      return res.status(400).json({ error: 'User already belongs to an organization' });
+      return res.status(200).json(existingUser.organization);
     }
 
     // Create organization
@@ -55,42 +65,61 @@ router.post('/', protect, extractUserInfo, async (req, res) => {
         domain,
         gstNumber,
         address,
-        keycloakOrgId: `org-${Date.now()}`, // Generate unique org ID
+        keycloakOrgId: `org-${crypto.randomUUID()}`,
       },
     });
 
-    // Link user to organization (create if doesn't exist, update if exists)
-    if (existingUser) {
-      // User exists, just link them to the org
-      await prisma.user.update({
-        where: { id: existingUser.id },
-        data: { 
-          organizationId: organization.id,
-          role: 'STUDIO_ADMIN',
-        },
-      });
-    } else {
-      // Create new user and link to org
-      await prisma.user.create({
-        data: {
-          keycloakId: keycloakId!,
-          email: req.user?.email || contactEmail,
-          firstName: req.user?.name?.split(' ')[0] || '',
-          lastName: req.user?.name?.split(' ').slice(1).join(' ') || '',
-          role: 'STUDIO_ADMIN',
-          status: 'ACTIVE',
-          organizationId: organization.id,
-        },
-      });
+    // Link user to organization in an idempotent way.
+    // This avoids unique-key races when /users/me and /organizations run concurrently.
+    await prisma.user.upsert({
+      where: { keycloakId: keycloakId! },
+      update: {
+        organizationId: organization.id,
+        role: 'STUDIO_ADMIN',
+      },
+      create: {
+        keycloakId: keycloakId!,
+        email: req.user?.email || contactEmail,
+        firstName: req.user?.name?.split(' ')[0] || '',
+        lastName: req.user?.name?.split(' ').slice(1).join(' ') || '',
+        role: 'STUDIO_ADMIN',
+        status: 'ACTIVE',
+        organizationId: organization.id,
+      },
+    });
+
+    // Optional Keycloak sync (disabled by default in Supabase-auth mode)
+    if (process.env.ENABLE_KEYCLOAK_ADMIN === 'true') {
+      try {
+        await keycloakAdminService.assignRoleToUser(keycloakId!, 'studio_owner');
+        console.log(`Assigned studio_owner role to user ${keycloakId}`);
+      } catch (roleError) {
+        console.error('Failed to assign Keycloak role:', roleError);
+      }
     }
 
-    // Assign studio_owner role in Keycloak
-    try {
-      await keycloakAdminService.assignRoleToUser(keycloakId!, 'studio_owner');
-      console.log(`Assigned studio_owner role to user ${keycloakId}`);
-    } catch (roleError) {
-      console.error('Failed to assign Keycloak role:', roleError);
-      // Don't fail the request, role can be assigned manually
+    // Supabase-auth mode: assign only studio owner role for studio creators.
+    // Single-role policy avoids owner/user view ambiguity.
+    if (supabaseAdmin && keycloakId) {
+      try {
+        const existing = await supabaseAdmin.auth.admin.getUserById(keycloakId);
+        const existingRoles = Array.isArray(existing.data.user?.app_metadata?.roles)
+          ? existing.data.user?.app_metadata?.roles
+          : [];
+        const baseRoles = existingRoles.filter(
+          (role) => !['studio_owner', 'studio_admin', 'studio_user'].includes(String(role).toLowerCase())
+        );
+        const mergedRoles = [...new Set([...baseRoles, 'studio_owner'])];
+
+        await supabaseAdmin.auth.admin.updateUserById(keycloakId, {
+          app_metadata: {
+            ...(existing.data.user?.app_metadata || {}),
+            roles: mergedRoles,
+          },
+        });
+      } catch (supabaseRoleError) {
+        console.error('Failed to update Supabase roles:', supabaseRoleError);
+      }
     }
 
     res.status(201).json(organization);
@@ -157,8 +186,8 @@ router.get('/:id', protect, extractUserInfo, checkRole('admin'), async (req, res
         },
         _count: {
           select: {
-            orders: true,
-            allocations: true,
+            machineOrders: true,
+            machines: true,
           },
         },
       },
@@ -191,7 +220,7 @@ router.get('/', protect, extractUserInfo, checkRole('admin'), async (req, res) =
           _count: {
             select: {
               users: true,
-              orders: true,
+              machineOrders: true,
             },
           },
         },

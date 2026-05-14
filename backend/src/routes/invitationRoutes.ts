@@ -3,8 +3,23 @@ import { protect, extractUserInfo, checkRole } from '../middleware/keycloak.js';
 import { prisma } from '../config/database.js';
 import { emailService } from '../services/emailService.js';
 import crypto from 'crypto';
+import { UserRole } from '@prisma/client';
 
 const router = Router();
+
+function toUserRole(role: string): UserRole {
+  const normalized = role?.toUpperCase();
+  if (
+    normalized === 'SUPER_ADMIN' ||
+    normalized === 'STUDIO_ADMIN' ||
+    normalized === 'STUDIO_MANAGER' ||
+    normalized === 'STUDIO_USER' ||
+    normalized === 'USER'
+  ) {
+    return normalized;
+  }
+  return 'STUDIO_USER';
+}
 
 // Get invitation by token (public - for accepting invitations)
 router.get('/:token', async (req, res) => {
@@ -89,7 +104,7 @@ router.post('/:token/accept', protect, extractUserInfo, async (req, res) => {
       where: { keycloakId: keycloakId! },
       update: {
         organizationId: invitation.organizationId,
-        role: invitation.role,
+        role: toUserRole(invitation.role),
         status: 'ACTIVE',
       },
       create: {
@@ -98,7 +113,7 @@ router.post('/:token/accept', protect, extractUserInfo, async (req, res) => {
         firstName: req.user?.name?.split(' ')[0] || '',
         lastName: req.user?.name?.split(' ').slice(1).join(' ') || '',
         organizationId: invitation.organizationId,
-        role: invitation.role,
+        role: toUserRole(invitation.role),
         status: 'ACTIVE',
       },
     });

@@ -191,7 +191,7 @@ export const adminController = {
           const studioAdmins = await prisma.user.findMany({
             where: {
               organizationId: order.organizationId,
-              role: { in: ['STUDIO_ADMIN', 'STUDIO_OWNER'] },
+              role: { in: ['STUDIO_ADMIN', 'STUDIO_MANAGER'] },
             },
           });
 

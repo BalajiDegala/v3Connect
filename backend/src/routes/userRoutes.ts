@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { protect, extractUserInfo, checkRole } from '../middleware/keycloak.js';
 import { tenantIsolation } from '../middleware/index.js';
 import { prisma } from '../config/database.js';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -27,18 +28,28 @@ router.get('/me', async (req, res) => {
     if (!user) {
       // Check if they have an organization from Keycloak claims
       const orgId = req.user?.organizationId;
-      
-      user = await prisma.user.create({
-        data: {
+      const orgExists = orgId
+        ? await prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } })
+        : null;
+
+      // Use upsert to avoid race-condition 500s on concurrent first-load requests.
+      user = await prisma.user.upsert({
+        where: { keycloakId },
+        update: {
+          email: req.user?.email || '',
+          firstName: req.user?.name?.split(' ')[0] || '',
+          lastName: req.user?.name?.split(' ').slice(1).join(' ') || '',
+        },
+        create: {
           keycloakId,
           email: req.user?.email || '',
           firstName: req.user?.name?.split(' ')[0] || '',
           lastName: req.user?.name?.split(' ').slice(1).join(' ') || '',
-          role: req.user?.roles?.includes('admin') ? 'SUPER_ADMIN' 
+          role: req.user?.roles?.includes('admin') ? 'SUPER_ADMIN'
               : req.user?.roles?.includes('studio_owner') ? 'STUDIO_ADMIN'
               : req.user?.roles?.includes('studio_admin') ? 'STUDIO_MANAGER'
               : 'STUDIO_USER',
-          organizationId: orgId || undefined,
+          organizationId: orgExists?.id,
         },
         include: { organization: true },
       });
@@ -150,9 +161,11 @@ router.post('/invite', tenantIsolation, checkRole('studio_owner', 'studio_admin'
     }
 
     // Create invitation record
+    const token = crypto.randomBytes(32).toString('hex');
     const invitation = await prisma.invitation.create({
       data: {
         email,
+        token,
         role: role || 'STUDIO_USER',
         organizationId,
         invitedById: req.user?.id || '',
